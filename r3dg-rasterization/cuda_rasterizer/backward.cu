@@ -452,12 +452,16 @@ renderCUDA(
 	// product of all (1 - alpha) factors.
 	const float T_final = inside ? final_Ts[pix_id] : 0;
 	float T = T_final;
+	// 从后向前计算梯度
+	// 每个高斯元的T值，可以这样计算：T(i-1) = T(i) / (1 - alpha(i))
 
 	// We start from the back. The ID of the last contributing
 	// Gaussian is known from each pixel from the forward.
 	uint32_t contributor = toDo;
 	const int last_contributor = inside ? n_contrib[pix_id] : 0;
+	// 从后（last_contributor）向前计算梯度
 
+	// 初始化这些梯度
 	float accum_rec[C] = { 0 };
 	float accum_rec_d = 0.f, accum_rec_o = 0.f, accum_rec_f[24] = { 0 };
 	float dL_dpixel[C];
@@ -471,6 +475,7 @@ renderCUDA(
             dL_dpixel_f[i] = dL_dpixels_f[i * H * W + pix_id];
 	}
 
+	// 最后一个高斯元的属性
 	float last_alpha = 0;
 	float last_depth = 0;
 	float last_color[C] = { 0 };
@@ -553,6 +558,7 @@ renderCUDA(
 			}
 
 			// for feature
+			// Feature和Color的计算方式一样
             for (int ch = 0; ch < S; ch++)
             {
                 const float feature = collected_features[ch * BLOCK_SIZE + j];

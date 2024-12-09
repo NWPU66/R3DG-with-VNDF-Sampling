@@ -394,7 +394,7 @@ renderCUDA(
 	}
 }
 
-
+//计算surface_xyz，这是每个像素对应表面的摄像机空间坐标
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderSurfaceXYZCUDA(
     const int W, const int H,
@@ -419,11 +419,14 @@ renderSurfaceXYZCUDA(
     uint32_t HW = H * W;
 	float depth = depths[pix_id] / fmaxf(opacities[pix_id], 0.0000001f);
 // 	float depth = depths[pix_id];
+
+	// 计算表面点的摄像机空间坐标
     surface_xyz[pix_id] =  (pix.x - cx) / focal_x * depth;
     surface_xyz[HW + pix_id] = (pix.y - cy) / focal_y * depth;
     surface_xyz[2 * HW + pix_id] = depth;
 }
 
+// 计算利用Surface_xyz伪法向
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderPseudoNormalCUDA(
     const int W, const int H,
@@ -455,6 +458,7 @@ renderPseudoNormalCUDA(
 	uint32_t pix_id21 = W * (pix.y==H-1?H-1:pix.y+1) + pix.x;
 	uint32_t pix_id22 = W * (pix.y==H-1?H-1:pix.y+1) + (pix.x==W-1?W-1:pix.x+1);
 
+	// 取周围9个像素的表面点摄像机空间坐标
     float xyz00[3] = {surface_xyz[pix_id00],surface_xyz[HW + pix_id00],surface_xyz[2 * HW + pix_id00]};
     float xyz01[3] = {surface_xyz[pix_id01],surface_xyz[HW + pix_id01],surface_xyz[2 * HW + pix_id01]};
     float xyz02[3] = {surface_xyz[pix_id02],surface_xyz[HW + pix_id02],surface_xyz[2 * HW + pix_id02]};
@@ -465,12 +469,24 @@ renderPseudoNormalCUDA(
     float xyz21[3] = {surface_xyz[pix_id21],surface_xyz[HW + pix_id21],surface_xyz[2 * HW + pix_id21]};
     float xyz22[3] = {surface_xyz[pix_id22],surface_xyz[HW + pix_id22],surface_xyz[2 * HW + pix_id22]};
     for (int i=0;i<3;i++){
+		// 模板
+		// -1 0 1
+		// -2 0 2
+		// -1 0 1
         gradient_a[i] = -0.125f * xyz00[i] + 0.125f * xyz02[i] - 0.25f * xyz10[i] + 0.25f * xyz12[i] - 0.125f * xyz20[i] + 0.125f * xyz22[i];
     }
 
     for (int i=0;i<3;i++){
+		// 模板
+		// -1 -2 -1
+		//  0  0  0
+		//  1  2  1
         gradient_b[i] = -0.125f * xyz00[i] - 0.25f * xyz01[i] - 0.125f * xyz02[i] + 0.125f * xyz20[i] + 0.25f * xyz21[i] + 0.125f * xyz22[i];
     }
+	// NOTE - 这是怎么求出法向的？
+	// gradient_a的y分量是0，表示Surface_xyz坐标沿着XOZ平面变化最快的方向
+	// gradient_b的z分量是0，表示Surface_xyz坐标沿着YOZ平面变化最快的方向
+	// 两个向量的叉乘结果就是法向
     float normal[3] = {
         gradient_a[1] * gradient_b[2] - gradient_a[2] * gradient_b[1],
         -gradient_a[0] * gradient_b[2] + gradient_a[2] * gradient_b[0],
@@ -481,10 +497,12 @@ renderPseudoNormalCUDA(
         return;
     }
 
+	// 归一化
     normal[0] = -normal[0] / norm;
     normal[1] = -normal[1] / norm;
     normal[2] = -normal[2] / norm;
 
+	// 变换到世界空间
     normals[pix_id11] = viewmatrix[0] * normal[0] + viewmatrix[1] * normal[1] + viewmatrix[2] * normal[2];
     normals[HW + pix_id11] = viewmatrix[4] * normal[0] + viewmatrix[5] * normal[1] + viewmatrix[6] * normal[2];
     normals[2 * HW + pix_id11] = viewmatrix[8] * normal[0] + viewmatrix[9] * normal[1] + viewmatrix[10] * normal[2];

@@ -206,7 +206,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* means3D,
 	const float* shs,
 	const float* colors_precomp,
-	const float* features,
+	const float* features,	// feature 直接进render函数，没有多余的计算
 	const float* opacities,
 	const float* scales,
 	const float scale_modifier,
@@ -222,7 +222,7 @@ int CudaRasterizer::Rasterizer::forward(
 	float* out_color,
 	float* out_opacity,
 	float* out_depth,
-	float* out_feature,
+	float* out_feature,	// out_feature 直接进render函数，没有多余的计算
 	float* out_normal,
 	float* out_surface_xyz,
 	float* out_weights,

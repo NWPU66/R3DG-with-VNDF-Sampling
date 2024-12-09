@@ -33,6 +33,7 @@ std::function<char*(size_t N)> resizeFunctional(torch::Tensor& t) {
     return lambda;
 }
 
+// NOTE - 前馈
 std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
 	const torch::Tensor& background,
@@ -64,7 +65,7 @@ RasterizeGaussiansCUDA(
   }
   
   const int P = means3D.size(0);
-  const int S = features.size(1);
+  const int S = features.size(1);	// S是Feature的维数
   const int H = image_height;
   const int W = image_width;
 
@@ -74,7 +75,7 @@ RasterizeGaussiansCUDA(
   torch::Tensor out_color = torch::full({NUM_CHANNELS, H, W}, 0.0, float_opts);
   torch::Tensor out_opacity = torch::full({1, H, W}, 0.0, float_opts);
   torch::Tensor out_depth = torch::full({1, H, W}, 0.0, float_opts);
-  torch::Tensor out_feature = torch::full({S, H, W}, 0.0, float_opts);
+  torch::Tensor out_feature = torch::full({S, H, W}, 0.0, float_opts);	// 输出Feature
   torch::Tensor out_normal = torch::full({3, H, W}, 0.0, float_opts);
   torch::Tensor out_surface_xyz = torch::full({3, H, W}, 0.0, float_opts);
   torch::Tensor out_weights = torch::full({P, 1}, 0.0, float_opts);
@@ -98,7 +99,7 @@ RasterizeGaussiansCUDA(
 		M = sh.size(1);
       }
 
-	  rendered = CudaRasterizer::Rasterizer::forward(
+	  rendered = CudaRasterizer::Rasterizer::forward(	// NOTE - 进入前馈函数
 	    geomFunc,
 		binningFunc,
 		imgFunc,
@@ -140,6 +141,7 @@ RasterizeGaussiansCUDA(
   return std::make_tuple(rendered, n_contrib, out_color, out_opacity, out_depth, out_feature, out_normal, out_surface_xyz, out_weights, radii, geomBuffer, binningBuffer, imgBuffer);
 }
 
+// NOTE - 反馈
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
  RasterizeGaussiansBackwardCUDA(
  	const torch::Tensor& background,
@@ -158,7 +160,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
     const torch::Tensor& dL_dout_color,
     const torch::Tensor& dL_dout_opacity,
     const torch::Tensor& dL_dout_depth,
-    const torch::Tensor& dL_dout_feature,
+    const torch::Tensor& dL_dout_feature,	// 注意看一下
 	const torch::Tensor& sh,
 	const int degree,
 	const torch::Tensor& campos,
@@ -193,7 +195,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 
   if(P != 0)
   {
-	  CudaRasterizer::Rasterizer::backward(P, S, degree, M, R,
+	  CudaRasterizer::Rasterizer::backward(P, S, degree, M, R,	// 反馈入口函数
 	  background.contiguous().data_ptr<float>(),
 	  W, H,
 	  means3D.contiguous().data_ptr<float>(),
