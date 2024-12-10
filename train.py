@@ -64,7 +64,7 @@ def training(
     if is_pbr:  # 前30000轮只训练几何，不训练材质
 
         # first update visibility
-        gaussians.update_visibility(pipe.sample_num)
+        gaussians.update_visibility(pipe.sample_num)  # 只更新可见性一次
 
         pbr_kwargs["sample_num"] = pipe.sample_num
         print("Using global incident light for regularization.")

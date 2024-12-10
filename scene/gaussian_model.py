@@ -111,7 +111,7 @@ class GaussianModel:
         if offset is not None:
             self._xyz.data = self._xyz.data + offset
 
-    def capture(self):
+    def capture(self):  # 只用来save模型
         captured_list = [
             self.active_sh_degree,
             self._xyz,
@@ -203,14 +203,14 @@ class GaussianModel:
         return torch.cat((shs_dc, shs_rest), dim=1)
 
     @property
-    def get_incidents(self):
+    def get_incidents(self):    # 在neilf中用到
         """SH"""
         incidents_dc = self._incidents_dc
         incidents_rest = self._incidents_rest
         return torch.cat((incidents_dc, incidents_rest), dim=1)
 
     @property
-    def get_visibility(self):
+    def get_visibility(self):   # 只在neilf_composite中用到，但是neilf_composite没有用
         """SH"""
         visibility_dc = self._visibility_dc
         visibility_rest = self._visibility_rest
@@ -272,7 +272,7 @@ class GaussianModel:
                                     'visibility_dc', 'visibility_rest'])
         return attribute_names
 
-    def finetune_visibility(self, iterations=1000):
+    def finetune_visibility(self, iterations=1000): # 好像没有用到
         visibility_sh_lr = 1e-2
         optimizer = torch.optim.Adam([
             {'params': [self._visibility_dc], 'lr': visibility_sh_lr},

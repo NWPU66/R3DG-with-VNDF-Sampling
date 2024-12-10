@@ -1,4 +1,5 @@
 import math
+from re import I
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -16,7 +17,12 @@ from utils.loss_utils import (
     first_order_edge_aware_norm_loss,
 )
 from utils.image_utils import psnr
-from utils.graphics_utils import fibonacci_sphere_sampling, rgb_to_srgb, srgb_to_rgb
+from utils.graphics_utils import (
+    fibonacci_sphere_sampling,
+    rgb_to_srgb,
+    srgb_to_rgb,
+    bounded_vndf_sampling,
+)
 from .r3dg_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 
 
@@ -493,9 +499,35 @@ def rendering_equation(
     incident_areas_precompute=None,
 ):
     incident_dirs, incident_areas = incident_dirs_precompute, incident_areas_precompute
-    # TODO - 修改采样策略
     # incident_dirs：是入射光的方向
     # incident_areas：是入射光方向上的单位角
+
+    # TODO - 修改采样策略
+    # SECTION - Test Zone
+
+    used_device = incidents.device
+
+    # 假设3个高斯，sample=2
+    i = torch.Tensor(
+        [
+            [1, 0, 1],  # 1st gaussian
+            [0, 1, 1],  # 2nd gaussian
+            [-1, -1, 1],  # 3rd gaussian
+        ],
+    ).to(used_device)  # [3, 3]
+    alpha = torch.Tensor(
+        [
+            [0.2],  # 1st gaussian
+            [0.5],  # 2nd gaussian
+            [0.8],  # 3rd gaussian
+        ],
+    ).to(used_device)  # [3, 1]
+    o, vndf_pdf = bounded_vndf_sampling(
+        i, alpha, sample_num=2
+    )  # [3, 2, 3] and [3, 2, 1]
+    print(o, vndf_pdf)
+
+    # ~SECTION - Test Zone
 
     deg = int(np.sqrt(incidents.shape[1]) - 1)  # 间接光的SH阶数
     global_incident_lights = direct_light_env_light.direct_light(incident_dirs)  # 直接入射光
