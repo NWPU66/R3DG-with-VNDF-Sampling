@@ -447,7 +447,7 @@ def calculate_loss(viewpoint_camera, pc, results, opt, direct_light_env_light):
     return loss, tb_dict
 
 
-def render_neilf(
+def render_vndf_sampling(
     viewpoint_camera: Camera,
     pc: GaussianModel,
     pipe,
@@ -505,6 +505,42 @@ def rendering_equation(
     # incident_areas：是入射光方向上的单位角
 
     # TODO - 修改采样策略
+    viewdirs_TS, tbn = vector_transform_WS2TS(normals, viewdirs)
+    m, o, pdf_m, pdf_o = bounded_vndf_sampling(
+        viewdirs_TS, torch.square(roughness), sample_num=20
+    )
+    incident_dirs_spec = vector_transform_TS2WS(o, tbn)
+    incident_dirs = torch.cat((incident_dirs, incident_dirs_spec), dim=1)
+
+    # SECTION - Test Zone
+    if False:
+        viewdirs_TS, tbn = vector_transform_WS2TS(normals, viewdirs)
+        alpha = torch.square(roughness)
+
+        # 假设3个高斯，sample=2
+        # i = torch.Tensor(
+        #     [
+        #         [1, 0, 1],  # 1st gaussian
+        #         [0, 1, 1],  # 2nd gaussian
+        #         [-1, -1, 1],  # 3rd gaussian
+        #     ],
+        # ).to(incidents.device)
+        # alpha = torch.Tensor(
+        #     [
+        #         [0.2],  # 1st gaussian
+        #         [0.5],  # 2nd gaussian
+        #         [0.8],  # 3rd gaussian
+        #     ],
+        # ).to(incidents.device)
+
+        m, o, pdf_m, pdf_o = bounded_vndf_sampling(
+            viewdirs_TS, alpha, sample_num=4
+        )  # [3, 2, 3] and [3, 2]
+        print(torch.cat((o, pdf_o.unsqueeze(-1)), dim=-1))
+
+        specular_vector = vector_transform_TS2WS(o, tbn)
+        print(specular_vector)
+    # ~SECTION - Test Zone
 
     deg = int(np.sqrt(incidents.shape[1]) - 1)  # 间接光的SH阶数
     global_incident_lights = direct_light_env_light.direct_light(incident_dirs)  # 直接入射光

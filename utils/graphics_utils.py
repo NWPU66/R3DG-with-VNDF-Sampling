@@ -59,6 +59,48 @@ def GGX_normal_distribution(m: torch.Tensor, alpha: torch.Tensor) -> torch.Tenso
     return alpha2 / (torch.pi * torch.square(NoM2 * (alpha2 - 1) + 1))
 
 
+def bounded_vndf_PDF(i: torch.Tensor, m: torch.Tensor, alpha: torch.Tensor) -> tuple:
+    """
+    bounded_vndf_PDF:
+    - UE5's implementation
+
+    input:
+    - i: incident direction. [GaussianNum, 3]
+    - m: microfacet normal. [GaussianNum, sample, 3]
+    - alpha: roughness. [GaussianNum, 1]
+
+    output:
+    - pdf_pm: [GaussianNum, sample]
+    - pdf_po: [GaussianNum, sample]
+    """
+    # while we are in the tanglent space, n = vec3(0, 0, 1)
+    NoI = i[:, 2].unsqueeze_(1)  # [GN, 1]
+    NoM = m[:, :, 2]  # [GN, sample]
+    IoM = torch.sum(i.unsqueeze(1) * m, dim=-1)  # [GN, sample]
+
+    a2 = torch.square(alpha)  # [GN, 1]
+    Hs = torch.cat((alpha, alpha, a2), dim=-1).unsqueeze_(1) * torch.stack(
+        (m[:, :, 0], m[:, :, 1], NoM), dim=-1
+    )  # [GN, sample, 3]
+    upper_s = torch.sum(Hs * Hs, dim=-1)  # [GN, sample]
+    upper_d = (1.0 / torch.pi) * a2 * torch.square(a2 / upper_s)  # [GN, sample]
+    upper_v = torch.cat((i[:, 0:2], NoI), dim=-1) * torch.cat(
+        (alpha, alpha, torch.ones_like(alpha)), dim=-1
+    )  # [GN, 3]
+    LenV = torch.norm(upper_v, dim=-1, keepdim=True)  # [GN, 1]
+
+    # calculate k
+    a = alpha.clamp(0, 1)  # [GN, 1]
+    s = 1.0 + torch.norm(i[:, 0:2], dim=-1, keepdim=True)  # [GN, 1]
+    ka2 = torch.square(a)
+    s2 = torch.square(s)
+    k = (s2 - ka2 * s2) / (s2 + ka2 * torch.square(NoI))  # [GN, 1]
+
+    pdf_m = (2.0 * upper_d * IoM) / (k * NoI + LenV)  # [GN, sample]
+    pdf_o = pdf_m / (4 * IoM)  # remenber to tranfer the PDF from m to o, use ||dm/do||
+    return pdf_m, pdf_o
+
+
 def bounded_vndf_sampling(
     i: torch.Tensor, alpha: torch.Tensor, sample_num: int
 ) -> tuple:
@@ -74,19 +116,17 @@ def bounded_vndf_sampling(
 
     output:
     - reflection vector o, whose microface normal respect to bounded VNDF.
+    - pdf of Bounded VNDF Sampling.
     """
     gaussian_num = i.shape[0]  # GN
     used_device = i.device
-    alpha_f2 = alpha.repeat(1, 2)  # [GN, 2]
 
     rand = torch.rand(
         gaussian_num, sample_num, 2, device=used_device
     )  # randNum: uniform distribution form [0, 1]X[0, 1], [GN, sample, 2]
 
     # transfer i into canonical space
-    i_std = i * torch.cat(
-        (alpha_f2, torch.ones(3, 1, device=used_device)), dim=-1
-    )  # [GN, 3]
+    i_std = i * torch.cat((alpha, alpha, torch.ones_like(alpha)), dim=-1)  # [GN, 3]
     i_std /= torch.norm(i_std, dim=-1, keepdim=True)  # normalized
 
     # Sample a spherical cap
@@ -96,7 +136,7 @@ def bounded_vndf_sampling(
     a2, s2 = torch.square(a), torch.square(s)  # [GN, 1]
     k = (1.0 - a2) * s2 / (s2 + a2 * torch.square(i[:, 2]).unsqueeze_(1))  # [GN, 1]
 
-    """ # Code From Original Paper
+    """ # Implimentaion From Original Paper
     b = torch.where(
     i[:, 2].unsqueeze_(1) > 0,
     k * i_std[:, 2].unsqueeze_(1),
@@ -115,18 +155,19 @@ def bounded_vndf_sampling(
     )  # [GN, sample, 3]
 
     # Compute the microfacet normal m
-    m_std = i_std.unsqueeze(1).repeat(1, sample_num, 1) + o_std  # [GN, sample, 3]
+    m_std = i_std.unsqueeze(1) + o_std  # [GN, sample, 3]
     m = m_std * torch.cat(  # [GN, sample, 3]
-        (alpha_f2, torch.ones(3, 1, device=used_device)), dim=-1
-    ).unsqueeze_(1).repeat(1, sample_num, 1)
+        (alpha, alpha, torch.ones_like(alpha)), dim=-1
+    ).unsqueeze_(1)
     m /= torch.norm(m, dim=-1, keepdim=True)  # normalized
 
     # reflection vector o
-    i_extended = i.unsqueeze(1).repeat(1, sample_num, 1)  # [GN, sample, 3]
+    i_extended = i.unsqueeze(1)  # [GN, 1, 3]
     o = (
         2.0 * (i_extended * m).sum(dim=-1, keepdim=True) * m - i_extended
     )  # [GN, sample, 3]
 
+    """
     # calculate the PDF of Bounded VNDF distribution
     ndf = GGX_normal_distribution(m, alpha)  # [GN, sample]
     ai = alpha_f2 * i[:, 0:2]  # [GN, 2]
@@ -139,8 +180,46 @@ def bounded_vndf_sampling(
         # Numerically stable form of the previous PDF for i.z < 0
         ndf * (t - i[:, 2].unsqueeze_(1)) / (2.0 * len2),
     )  # [GN, sample, 1]
+    """
+    pdf_m, pdf_o = bounded_vndf_PDF(i, m, alpha)
+    return m, o, pdf_m, pdf_o
 
-    return o, vndf_pdf
+
+def vector_transform_WS2TS(normal: torch.Tensor, view_dir: torch.Tensor) -> tuple:
+    """
+    vector_transform_WS2TS
+    """
+    n = normal / torch.norm(normal, dim=-1, keepdim=True)  # [GN, 3]
+    v = view_dir / torch.norm(view_dir, dim=-1, keepdim=True)  # [GN, 3]
+    b = torch.cross(n, v, dim=-1)  # [GN, 3]
+    b /= torch.norm(b, dim=-1, keepdim=True)
+    t = torch.cross(b, n, dim=-1)  # [GN, 3]
+    tbn = torch.cat(
+        (
+            t.view(-1, 3, 1),
+            b.view(-1, 3, 1),
+            n.view(-1, 3, 1),
+        ),
+        dim=-1,
+    )  # [GN, 3, 3]
+    inv_tbn = torch.transpose(tbn, -1, -2)  # [GN, 3, 3]
+    return torch.matmul(inv_tbn, v.view(-1, 3, 1)).view(-1, 3), tbn
+
+
+def vector_transform_TS2WS(vector: torch.Tensor, tbn: torch.Tensor) -> torch.Tensor:
+    """
+    vector_transform_WS2TS
+
+    input:
+    - vector: [GN, sample, 3]
+    - tbn: [GN, 3, 3]
+    """
+    sample_num = vector.shape[1]
+    _vector = vector.view(-1, 3, 1)  # [GN*sample, 3, 1]
+    _tbn = (
+        tbn.unsqueeze(1).repeat(1, sample_num, 1, 1).view(-1, 3, 3)
+    )  # [GN*sample, 3, 3]
+    return torch.matmul(_tbn, _vector).view(-1, sample_num, 3)  # [GN, sample, 3]
 
 
 def rotation_between_vectors(vec1, vec2):

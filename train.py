@@ -635,7 +635,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-t",
         "--type",
-        choices=["render", "normal", "neilf"],
+        choices=["render", "normal", "neilf", "vndf_sampling"],
         default="render"
         # NOTE - "render"是3dgs管线，"neilf"是优化材质属性的管线
         # 先作30000轮的基础3dgs训练，在优化材质属性10000轮
@@ -655,8 +655,11 @@ if __name__ == "__main__":
 
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
-    is_pbr = args.type in ["neilf"]
+    is_pbr = args.type in ["neilf", "vndf_sampling"]
     training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
 
     # All done
     print("\nTraining complete.")
+
+    # TODO - Add Total Trainning Time
+    
