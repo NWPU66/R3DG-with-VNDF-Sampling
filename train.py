@@ -1,7 +1,8 @@
-import os
+import os, time, datetime, gc
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.autograd.profiler as profiler
 import torchvision
 from collections import defaultdict
 from random import randint
@@ -29,6 +30,23 @@ from scene.utils import (
 )
 
 
+def trainning_time(func: callable) -> None:
+    def format_time(time: float) -> str:
+        elapsed_rounded = int(round((time)))
+        # 格式化为 hh:mm:ss
+        return str(datetime.timedelta(seconds=elapsed_rounded))
+
+    def wrapper(*args, **kwargs) -> None:
+        start_time = time.time()  # 记录开始时间
+        result = func(*args, **kwargs)  # 执行函数
+        end_time = time.time()  # 记录结束时间
+        print(f"\nTotal process time: {format_time(end_time - start_time)}.")
+        return result
+
+    return wrapper
+
+
+@trainning_time
 def training(
     dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams, is_pbr=False
 ):
@@ -131,6 +149,9 @@ def training(
     )
 
     for iteration in progress_bar:
+        gc.collect()  # all clear
+        torch.cuda.empty_cache()  # 释放显存
+
         gaussians.update_learning_rate(iteration)  # 更新学习率
 
         if windows is not None:
@@ -656,10 +677,12 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
     is_pbr = args.type in ["neilf", "vndf_sampling"]
+    # with profiler.profile(
+    #     activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    #     on_trace_ready=torch.profiler.tensorboard_trace_handler(args.m),
+    # ) as prof:
+    #     training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
     training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
 
     # All done
-    print("\nTraining complete.")
-
-    # TODO - Add Total Trainning Time
-    
+    print(f"\nTraining complete.")

@@ -18,6 +18,8 @@ from utils.loss_utils import (
 )
 from utils.image_utils import psnr
 from utils.graphics_utils import (
+    bounded_vndf_sampling,
+    bounded_vndf_sampling2,
     fibonacci_sphere_sampling,
     rgb_to_srgb,
     srgb_to_rgb,
@@ -134,6 +136,7 @@ def render_view(
             visibility_precompute=pc._visibility_tracing,
             incident_dirs_precompute=pc._incident_dirs,
             incident_areas_precompute=pc._incident_areas,
+            is_training=is_training,
         )
     else:
         chunk_size = 100000
@@ -150,6 +153,7 @@ def render_view(
                 visibility_precompute=pc._visibility_tracing[i : i + chunk_size],
                 incident_dirs_precompute=pc._incident_dirs[i : i + chunk_size],
                 incident_areas_precompute=pc._incident_areas[i : i + chunk_size],
+                is_training=is_training,
             )
             brdf_color.append(_brdf_color)
             extra_results.append(_extra_results)
@@ -499,48 +503,22 @@ def rendering_equation(
     visibility_precompute=None,
     incident_dirs_precompute=None,
     incident_areas_precompute=None,
+    is_training=None,
 ):
-    incident_dirs, incident_areas = incident_dirs_precompute, incident_areas_precompute
+    # incident_dirs, incident_areas = incident_dirs_precompute, incident_areas_precompute
     # incident_dirs：是入射光的方向
     # incident_areas：是入射光方向上的单位角
 
     # TODO - 修改采样策略
     viewdirs_TS, tbn = vector_transform_WS2TS(normals, viewdirs)
-    m, o, pdf_m, pdf_o = bounded_vndf_sampling(
-        viewdirs_TS, torch.square(roughness), sample_num=20
+    o, pdf_o = bounded_vndf_sampling2(
+        viewdirs_TS, torch.square(roughness), sample_num=16
     )
-    incident_dirs_spec = vector_transform_TS2WS(o, tbn)
-    incident_dirs = torch.cat((incident_dirs, incident_dirs_spec), dim=1)
-
-    # SECTION - Test Zone
-    if False:
-        viewdirs_TS, tbn = vector_transform_WS2TS(normals, viewdirs)
-        alpha = torch.square(roughness)
-
-        # 假设3个高斯，sample=2
-        # i = torch.Tensor(
-        #     [
-        #         [1, 0, 1],  # 1st gaussian
-        #         [0, 1, 1],  # 2nd gaussian
-        #         [-1, -1, 1],  # 3rd gaussian
-        #     ],
-        # ).to(incidents.device)
-        # alpha = torch.Tensor(
-        #     [
-        #         [0.2],  # 1st gaussian
-        #         [0.5],  # 2nd gaussian
-        #         [0.8],  # 3rd gaussian
-        #     ],
-        # ).to(incidents.device)
-
-        m, o, pdf_m, pdf_o = bounded_vndf_sampling(
-            viewdirs_TS, alpha, sample_num=4
-        )  # [3, 2, 3] and [3, 2]
-        print(torch.cat((o, pdf_o.unsqueeze(-1)), dim=-1))
-
-        specular_vector = vector_transform_TS2WS(o, tbn)
-        print(specular_vector)
-    # ~SECTION - Test Zone
+    incident_dirs_diff, incident_dirs_diff_area = fibonacci_sphere_sampling(
+        normals, 16, is_training
+    )  # NOTE - 漫反射采样16条
+    incident_dirs_spec, incident_dirs_spec_pdf = vector_transform_TS2WS(o, tbn), pdf_o
+    incident_dirs = torch.cat((incident_dirs_diff, incident_dirs_spec), dim=1)
 
     deg = int(np.sqrt(incidents.shape[1]) - 1)  # 间接光的SH阶数
     global_incident_lights = direct_light_env_light.direct_light(incident_dirs)  # 直接入射光
@@ -559,7 +537,12 @@ def rendering_equation(
         normals, viewdirs, incident_dirs, roughness, fresnel=0.04
     )  # 镜面反射
 
-    transport = incident_lights * incident_areas * n_d_i  # （num_pts, num_sample, 3)
+    # transport = incident_lights * incident_areas * n_d_i  # （num_pts, num_sample, 3)
+    inv_pdf = torch.cat((incident_dirs_diff_area, 1 / incident_dirs_spec_pdf), dim=1)
+    # incident_dirs_diff_area是2PI，他是均匀采样pdf的倒数，
+    # incident_dirs_spec_pdf还不是倒数，所以要1 / incident_dirs_spec_pdf
+    transport = incident_lights * inv_pdf * n_d_i
+    # TODO - 重要性采样要除以pdf
     specular = ((f_s) * transport).mean(dim=-2)
     pbr = ((f_d + f_s) * transport).mean(dim=-2)
     diffuse_light = transport.mean(dim=-2)

@@ -8,20 +8,20 @@ list="lego"
 
 for i in $list; do
 
-    # 训练3DGS
-    python train.py --eval \
-        -s $root_dir/$i \
-        -m output/NeRF_Syn/$i/3dgs \
-        --lambda_normal_render_depth 0.01 \
-        --lambda_normal_smooth 0.01 \
-        --lambda_mask_entropy 0.1 \
-        --save_training_vis \
-        --lambda_depth_var 1e-2
+    # # 训练3DGS
+    # python train.py --eval \
+    #     -s $root_dir/$i \
+    #     -m output/NeRF_Syn/$i/3dgs \
+    #     --lambda_normal_render_depth 0.01 \
+    #     --lambda_normal_smooth 0.01 \
+    #     --lambda_mask_entropy 0.1 \
+    #     --save_training_vis \
+    #     --lambda_depth_var 1e-2
 
-    # 新颖视角合成
-    python eval_nvs.py --eval \
-        -m output/NeRF_Syn/${i}/3dgs \
-        -c output/NeRF_Syn/${i}/3dgs/chkpnt30000.pth
+    # # 新颖视角合成
+    # python eval_nvs.py --eval \
+    #     -m output/NeRF_Syn/${i}/3dgs \
+    #     -c output/NeRF_Syn/${i}/3dgs/chkpnt30000.pth
 
     # neilf
     model_name="neilf"
@@ -43,10 +43,10 @@ for i in $list; do
         --lambda_roughness_smooth 0 \
         --lambda_light_smooth 0 \
         --lambda_light 0.01 \
-        -t $model_name --sample_num 40 \
+        -t $model_name --sample_num 32 \
         --save_training_vis_iteration 200 \
         --lambda_env_smooth 0.01
-    # sample_num: 漫反射采样数 40
+    # sample_num: 漫反射采样数 32
 
     python eval_nvs.py --eval \
         -m output/NeRF_Syn/${i}/$model_name \
@@ -73,11 +73,12 @@ for i in $list; do
         --lambda_roughness_smooth 0 \
         --lambda_light_smooth 0 \
         --lambda_light 0.01 \
-        -t $model_name --sample_num 20 \
+        -t $model_name --sample_num 32 \
         --save_training_vis_iteration 200 \
         --lambda_env_smooth 0.01
-    # sample_num: 漫反射采样数降低至 20
-    # 镜面反射的采样数为 20
+    # sample_num: 漫反射采样数降低至 16
+    # 镜面反射的采样数为 16
+    # 直接改--sample_num 16会出问题，我在渲染方程中手动采样20条漫反射光线
 
     python eval_nvs.py --eval \
         -m output/NeRF_Syn/${i}/$model_name \
