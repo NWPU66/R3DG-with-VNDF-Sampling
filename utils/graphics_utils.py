@@ -223,7 +223,7 @@ def bounded_vndf_sampling2(
     k = (1.0 - a2) * s2 / (s2 + a2 * torch.square(i[:, 2]).unsqueeze(1))  # [GN, 1]
 
     z = torch.lerp(  # UE5 Implimentaion
-        torch.ones_like(k), -k * i_std[:, 2].unsqueeze(1), rand[:, :, 1]
+        torch.ones_like(k) - 1e-6, -k * i_std[:, 2].unsqueeze(1), rand[:, :, 1]
     )  # [GN, sample]
     sinTheta = torch.sqrt((1.0 - torch.square(z)).clamp(0, 1))  # [GN, sample]
     o_std = torch.stack(  # stack() is correct

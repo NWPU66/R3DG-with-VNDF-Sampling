@@ -48,7 +48,11 @@ def trainning_time(func: callable) -> None:
 
 @trainning_time
 def training(
-    dataset: ModelParams, opt: OptimizationParams, pipe: PipelineParams, is_pbr=False
+    dataset: ModelParams,
+    opt: OptimizationParams,
+    pipe: PipelineParams,
+    is_pbr=False,
+    set_detect_anomaly=False,
 ):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -198,7 +202,11 @@ def training(
         # Loss
         tb_dict = render_pkg["tb_dict"]
         loss += render_pkg["loss"]
-        loss.backward()
+        if set_detect_anomaly:
+            with torch.autograd.detect_anomaly():
+                loss.backward()
+        else:
+            loss.backward()
 
         with torch.no_grad():
             if pipe.save_training_vis:
@@ -682,7 +690,13 @@ if __name__ == "__main__":
     #     on_trace_ready=torch.profiler.tensorboard_trace_handler(args.m),
     # ) as prof:
     #     training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
-    training(lp.extract(args), op.extract(args), pp.extract(args), is_pbr=is_pbr)
+    training(
+        lp.extract(args),
+        op.extract(args),
+        pp.extract(args),
+        is_pbr=is_pbr,
+        set_detect_anomaly=args.detect_anomaly,
+    )
 
     # All done
     print(f"\nTraining complete.")

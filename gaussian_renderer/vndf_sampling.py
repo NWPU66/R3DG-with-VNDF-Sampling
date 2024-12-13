@@ -16,7 +16,7 @@ from utils.loss_utils import (
     first_order_loss,
     first_order_edge_aware_norm_loss,
 )
-from utils.image_utils import psnr
+from utils.image_utils import psnr, show_image_form_data
 from utils.graphics_utils import (
     bounded_vndf_sampling,
     bounded_vndf_sampling2,
@@ -28,6 +28,7 @@ from utils.graphics_utils import (
     vector_transform_TS2WS,
 )
 from .r3dg_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from utils.general_utils import show_data_histogram
 
 
 def render_view(
@@ -270,7 +271,7 @@ def render_view(
         ) = rendered_feature.split([1, 1, 3, 3, 3, 1, 3, 3, 3, 3, 3, 1], dim=0)
         feature_dict.update(
             {
-                "base_color": rgb_to_srgb(rendered_base_color),
+                "base_color": rgb_to_srgb(rendered_base_color),  # rgb_to_srgb是色调映射吧
                 "roughness": rendered_roughness,
                 "diffuse": rgb_to_srgb(rendered_diffuse),
                 "specular": rgb_to_srgb(rendered_specular),
@@ -521,7 +522,7 @@ def rendering_equation(
     incident_dirs = torch.cat((incident_dirs_diff, incident_dirs_spec), dim=1)
 
     deg = int(np.sqrt(incidents.shape[1]) - 1)  # 间接光的SH阶数
-    global_incident_lights = direct_light_env_light.direct_light(incident_dirs)  # 直接入射光
+    global_incident_lights = direct_light_env_light.direct_light(incident_dirs)  # 直接入射光 
     local_incident_lights = eval_sh(
         deg, incidents.transpose(1, 2).view(-1, 1, 3, (deg + 1) ** 2), incident_dirs
     ).clamp_min(0)
